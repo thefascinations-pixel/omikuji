@@ -652,7 +652,10 @@ function App() {
       </div>
 
       {activeFortune && drawnAt && (
-        <div className="pointer-events-none fixed left-[-200vw] top-0 w-[1080px]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed left-[-99999px] top-0 w-[1080px]"
+        >
           <div
             ref={shareCardRef}
             className="overflow-hidden rounded-[56px] bg-[#f7f3ee] p-12 text-charcoal"
