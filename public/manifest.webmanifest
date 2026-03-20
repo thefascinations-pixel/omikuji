@@ -1,7 +1,7 @@
 {
   "name": "おみくじ",
   "short_name": "おみくじ",
-  "description": "静かに今日の運勢を受け取る、和風モダンなおみくじアプリ。",
+  "description": "東京の季節と時間にあわせて表情を変える、静かな神社の世界で今日の運勢を引けるおみくじアプリ。",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F7F3EE",

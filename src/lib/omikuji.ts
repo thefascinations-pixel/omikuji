@@ -27,6 +27,21 @@ export type StoredFortune = {
 
 export type MotionPermissionState = 'unsupported' | 'prompt' | 'granted' | 'denied'
 
+export type ShrineWorld = {
+  season: 'spring' | 'summer' | 'autumn' | 'winter'
+  seasonLabel: string
+  timeOfDay: 'morning' | 'day' | 'evening' | 'night'
+  timeLabel: string
+  title: string
+  subtitle: string
+  ambientNote: string
+  motifs: string[]
+  shellGradient: string
+  shellGlow: string
+  panelTint: string
+  accentTint: string
+}
+
 declare global {
   interface Window {
     webkitAudioContext?: typeof AudioContext
@@ -120,6 +135,143 @@ export function getTokyoDateKey(dateInput: string | Date = new Date()) {
 
 export function isSameTokyoDay(dateA: string, dateB: string | Date = new Date()) {
   return getTokyoDateKey(dateA) === getTokyoDateKey(dateB)
+}
+
+export function getTokyoWorld(dateInput: string | Date = new Date()): ShrineWorld {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TOKYO_TIME_ZONE,
+    month: 'numeric',
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(date)
+
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? 1)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 12)
+
+  const season =
+    month >= 3 && month <= 5
+      ? 'spring'
+      : month >= 6 && month <= 8
+        ? 'summer'
+        : month >= 9 && month <= 11
+          ? 'autumn'
+          : 'winter'
+
+  const timeOfDay =
+    hour >= 5 && hour < 11
+      ? 'morning'
+      : hour >= 11 && hour < 16
+        ? 'day'
+        : hour >= 16 && hour < 19
+          ? 'evening'
+          : 'night'
+
+  const seasonWorlds: Record<ShrineWorld['season'], Omit<ShrineWorld, 'timeOfDay' | 'timeLabel'>> = {
+    spring: {
+      season: 'spring',
+      seasonLabel: '春詣',
+      title: '桜の気配が漂う境内',
+      subtitle: 'やわらかな光のなかで、今日の運勢が静かに姿を見せます。',
+      ambientNote: '花びらの余韻が、言葉をやさしく受け止めてくれます。',
+      motifs: ['桜', '花', '風'],
+      shellGradient:
+        'radial-gradient(circle at top, rgba(255,220,228,0.72), transparent 30%), radial-gradient(circle at bottom, rgba(212,175,55,0.14), transparent 28%), linear-gradient(180deg, #fff9f7 0%, #f7f0ee 46%, #f2e7e4 100%)',
+      shellGlow: 'from-[#F7C8CF]/30 via-[#F7C8CF]/8 to-transparent',
+      panelTint: 'bg-white/58 border-white/70',
+      accentTint: 'from-[#F4D1D5]/60 via-white/15 to-transparent',
+    },
+    summer: {
+      season: 'summer',
+      seasonLabel: '夏詣',
+      title: '青葉を抜ける涼しい風',
+      subtitle: '夏の境内にある静けさのなかで、運勢がすっと届きます。',
+      ambientNote: '水辺のような涼しさが、心を少し軽くしてくれます。',
+      motifs: ['青葉', '風鈴', '水'],
+      shellGradient:
+        'radial-gradient(circle at top, rgba(168,221,223,0.48), transparent 30%), radial-gradient(circle at bottom, rgba(98,165,173,0.18), transparent 28%), linear-gradient(180deg, #f8fcfc 0%, #f2f7f5 44%, #e7efec 100%)',
+      shellGlow: 'from-[#9FD7D4]/30 via-[#9FD7D4]/8 to-transparent',
+      panelTint: 'bg-white/60 border-white/75',
+      accentTint: 'from-[#BEE8E5]/55 via-white/15 to-transparent',
+    },
+    autumn: {
+      season: 'autumn',
+      seasonLabel: '秋詣',
+      title: '紅葉が映える静かな参道',
+      subtitle: '澄んだ空気のなかで、受け取る言葉がいっそう深く響きます。',
+      ambientNote: '木々の色づきが、落ち着いた一日へと気持ちを導きます。',
+      motifs: ['紅葉', '実り', '灯'],
+      shellGradient:
+        'radial-gradient(circle at top, rgba(230,173,120,0.5), transparent 30%), radial-gradient(circle at bottom, rgba(192,57,43,0.14), transparent 28%), linear-gradient(180deg, #fcf7f0 0%, #f6eee4 46%, #efe2d5 100%)',
+      shellGlow: 'from-[#E7B07D]/30 via-[#E7B07D]/8 to-transparent',
+      panelTint: 'bg-white/56 border-white/70',
+      accentTint: 'from-[#E9C39E]/58 via-white/15 to-transparent',
+    },
+    winter: {
+      season: 'winter',
+      seasonLabel: '冬詣',
+      title: '凛と澄んだ冬の社',
+      subtitle: '冷たい空気に包まれながら、まっすぐな言葉を受け取る時間です。',
+      ambientNote: '静まり返った空気が、心を整える余白をつくってくれます。',
+      motifs: ['雪', '灯籠', '月'],
+      shellGradient:
+        'radial-gradient(circle at top, rgba(214,225,238,0.62), transparent 32%), radial-gradient(circle at bottom, rgba(130,154,180,0.16), transparent 28%), linear-gradient(180deg, #f8fafc 0%, #f1f4f7 44%, #e8edf2 100%)',
+      shellGlow: 'from-[#D6E1EE]/30 via-[#D6E1EE]/8 to-transparent',
+      panelTint: 'bg-white/60 border-white/72',
+      accentTint: 'from-[#DCE4ED]/56 via-white/15 to-transparent',
+    },
+  }
+
+  const timeLabels: Record<ShrineWorld['timeOfDay'], string> = {
+    morning: '朝の社',
+    day: '昼の社',
+    evening: '夕暮れの社',
+    night: '夜の社',
+  }
+
+  const timeAtmosphere: Record<
+    ShrineWorld['timeOfDay'],
+    Pick<ShrineWorld, 'shellGradient' | 'shellGlow' | 'panelTint' | 'accentTint'>
+  > = {
+    morning: {
+      shellGradient:
+        'radial-gradient(circle at top, rgba(255,232,189,0.52), transparent 24%), radial-gradient(circle at bottom, rgba(212,175,55,0.12), transparent 28%), linear-gradient(180deg, rgba(255,250,242,0.9) 0%, rgba(248,242,234,0.88) 52%, rgba(240,233,225,0.9) 100%)',
+      shellGlow: 'from-[#F6DDA7]/30 via-[#F6DDA7]/10 to-transparent',
+      panelTint: 'bg-white/60 border-white/75',
+      accentTint: 'from-[#F7E2B3]/60 via-white/15 to-transparent',
+    },
+    day: {
+      shellGradient:
+        'radial-gradient(circle at top, rgba(255,245,213,0.32), transparent 22%), radial-gradient(circle at bottom, rgba(192,57,43,0.08), transparent 28%), linear-gradient(180deg, rgba(250,247,242,0.95) 0%, rgba(247,243,238,0.92) 48%, rgba(239,233,225,0.94) 100%)',
+      shellGlow: 'from-gold/20 via-gold/6 to-transparent',
+      panelTint: 'bg-white/55 border-white/70',
+      accentTint: 'from-[#F4DED0]/55 via-white/15 to-transparent',
+    },
+    evening: {
+      shellGradient:
+        'radial-gradient(circle at top, rgba(245,187,150,0.4), transparent 24%), radial-gradient(circle at bottom, rgba(192,57,43,0.14), transparent 32%), linear-gradient(180deg, rgba(251,244,238,0.96) 0%, rgba(244,234,224,0.94) 52%, rgba(232,220,210,0.95) 100%)',
+      shellGlow: 'from-[#E6A679]/30 via-[#E6A679]/9 to-transparent',
+      panelTint: 'bg-white/56 border-white/68',
+      accentTint: 'from-[#EBC0A4]/60 via-white/12 to-transparent',
+    },
+    night: {
+      shellGradient:
+        'radial-gradient(circle at top, rgba(76,95,124,0.34), transparent 26%), radial-gradient(circle at bottom, rgba(212,175,55,0.12), transparent 24%), linear-gradient(180deg, rgba(239,241,245,0.98) 0%, rgba(230,234,240,0.96) 50%, rgba(220,225,233,0.98) 100%)',
+      shellGlow: 'from-[#94A6C4]/28 via-[#94A6C4]/8 to-transparent',
+      panelTint: 'bg-white/62 border-white/72',
+      accentTint: 'from-[#C2CCDF]/58 via-white/12 to-transparent',
+    },
+  }
+
+  const base = seasonWorlds[season]
+  const time = timeAtmosphere[timeOfDay]
+
+  return {
+    ...base,
+    ...time,
+    timeOfDay,
+    timeLabel: timeLabels[timeOfDay],
+  }
 }
 
 export function saveStoredFortune(fortune: StoredFortune) {

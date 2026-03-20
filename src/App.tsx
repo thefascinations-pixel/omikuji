@@ -10,6 +10,7 @@ import {
   getMotionPermissionState,
   getSharedFortuneId,
   getTokyoDateKey,
+  getTokyoWorld,
   loadOmikujiDataset,
   loadStoredFortune,
   pickRandomFortune,
@@ -41,6 +42,13 @@ const particles = [
   { top: '86%', left: '60%', size: '9px', delay: '1.1s', duration: '12s' },
 ]
 
+const worldMarks = [
+  { top: '9%', left: '7%', rotate: '-8deg', delay: '0s' },
+  { top: '18%', left: '82%', rotate: '7deg', delay: '1.1s' },
+  { top: '33%', left: '12%', rotate: '-5deg', delay: '2.1s' },
+  { top: '58%', left: '84%', rotate: '6deg', delay: '0.6s' },
+]
+
 function App() {
   const [entries, setEntries] = useState<OmikujiEntry[]>([])
   const [phase, setPhase] = useState<Phase>('idle')
@@ -61,6 +69,7 @@ function App() {
   const shareCardRef = useRef<HTMLDivElement | null>(null)
 
   const todayKey = getTokyoDateKey()
+  const world = getTokyoWorld()
   const hasTodayFortune = Boolean(
     savedPreview && getTokyoDateKey(savedPreview.drawnAt) === todayKey,
   )
@@ -320,8 +329,14 @@ function App() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-paper text-charcoal">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(212,175,55,0.17),transparent_35%),radial-gradient(circle_at_bottom,rgba(192,57,43,0.12),transparent_28%),linear-gradient(180deg,#faf7f2_0%,#f7f3ee_42%,#f2ece5_100%)]" />
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ background: world.shellGradient }}
+      />
       <div className="paper-grain pointer-events-none absolute inset-0 opacity-70" />
+      <div
+        className={`pointer-events-none absolute inset-x-0 top-0 h-[26rem] bg-gradient-to-b ${world.shellGlow} blur-3xl`}
+      />
 
       {particles.map((particle, index) => (
         <span
@@ -339,12 +354,27 @@ function App() {
         />
       ))}
 
+      {worldMarks.map((mark, index) => (
+        <span
+          key={`${mark.top}-${mark.left}`}
+          className="pointer-events-none absolute font-serif text-lg text-shrine-red/18 animate-float"
+          style={{
+            top: mark.top,
+            left: mark.left,
+            transform: `rotate(${mark.rotate})`,
+            animationDelay: mark.delay,
+          }}
+        >
+          {world.motifs[index % world.motifs.length]}
+        </span>
+      ))}
+
       <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-8 pt-6 sm:px-6">
         <header className="mb-6 flex items-start justify-between">
           <div>
             <p className="font-serif text-sm tracking-[0.35em] text-shrine-red/80">OMIKUJI</p>
             <h1 className="mt-2 font-serif text-[2.6rem] leading-none text-charcoal">おみくじ</h1>
-            <p className="mt-3 text-sm leading-6 text-ink/80">今日の運勢を引いてみましょう</p>
+            <p className="mt-3 text-sm leading-6 text-ink/80">{world.title}</p>
           </div>
 
           <div className="flex gap-2">
@@ -362,13 +392,25 @@ function App() {
         </header>
 
         <section className="relative flex flex-1 flex-col">
-          <div className="pointer-events-none absolute inset-x-6 top-16 h-40 rounded-full bg-gradient-to-b from-shrine-red/10 to-transparent blur-3xl" />
+          <div
+            className={`pointer-events-none absolute inset-x-6 top-16 h-40 rounded-full bg-gradient-to-b ${world.shellGlow} blur-3xl`}
+          />
 
-          <div className="relative rounded-[2rem] border border-white/60 bg-white/55 p-5 shadow-slip backdrop-blur">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-shrine-red/70">Daily Shrine Draw</p>
-                <p className="mt-2 text-sm text-ink/75">
+          <div
+            className={`relative rounded-[2rem] p-5 shadow-slip backdrop-blur ${world.panelTint}`}
+          >
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div className="max-w-[15.5rem]">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-charcoal/10 bg-white/60 px-3 py-1 text-[11px] tracking-[0.2em] text-ink/70">
+                    {world.seasonLabel}
+                  </span>
+                  <span className="rounded-full border border-charcoal/10 bg-white/60 px-3 py-1 text-[11px] tracking-[0.2em] text-ink/70">
+                    {world.timeLabel}
+                  </span>
+                </div>
+                <p className="mt-3 font-serif text-xl leading-8 text-charcoal">{world.subtitle}</p>
+                <p className="mt-2 text-sm leading-7 text-ink/72">
                   {hasTodayFortune
                     ? '本日分はすでに授かっています。結果を大切に持ち帰りましょう。'
                     : motionPermission === 'granted'
@@ -376,13 +418,25 @@ function App() {
                       : '一日一回、静かに今日の運勢を受け取りましょう。'}
                 </p>
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gold/30 bg-gold/10 font-serif text-lg text-shrine-red animate-float">
-                鈴
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gold/30 bg-gold/10 font-serif text-lg text-shrine-red animate-float">
+                  鈴
+                </div>
+                <p className="max-w-[7rem] text-right text-[11px] leading-5 text-ink/60">
+                  {world.ambientNote}
+                </p>
               </div>
             </div>
 
             <div className="relative overflow-hidden rounded-[1.75rem] border border-paper-deep bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(247,243,238,0.96))] px-5 py-6">
+              <div
+                className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b"
+                style={{
+                  backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,0)), linear-gradient(180deg, transparent, transparent)`,
+                }}
+              />
               <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${accent.accent}`} />
+              <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${world.accentTint}`} />
 
               {isLoading ? (
                 <div className="flex min-h-[24rem] flex-col items-center justify-center gap-4 text-center">
@@ -405,6 +459,16 @@ function App() {
                 <div className="relative min-h-[24rem]">
                   {phase === 'idle' && (
                     <div className="flex min-h-[24rem] flex-col items-center justify-center text-center animate-fade-up">
+                      <div className="mb-4 flex flex-wrap justify-center gap-2">
+                        {world.motifs.map((motif) => (
+                          <span
+                            key={motif}
+                            className="rounded-full border border-charcoal/10 bg-white/70 px-3 py-1 text-xs text-ink/70"
+                          >
+                            {motif}
+                          </span>
+                        ))}
+                      </div>
                       <div className="relative mb-6">
                         <div className="mx-auto h-28 w-20 rounded-t-[1.6rem] bg-shrine-red shadow-glow" />
                         <div className="absolute left-1/2 top-10 h-28 w-16 -translate-x-1/2 rounded-[1.1rem] border border-paper-deep bg-paper shadow-slip" />
@@ -417,6 +481,9 @@ function App() {
                         {hasTodayFortune
                           ? '今日のおみくじはすでに引いてあります。静かな余韻とともに、受け取った言葉を見返してみましょう。'
                           : '深呼吸をひとつ。心を静かにしてから、そっと運勢を引いてみましょう。'}
+                      </p>
+                      <p className="mt-3 max-w-[17rem] text-xs leading-6 text-ink/62">
+                        {world.subtitle}
                       </p>
 
                       <button
@@ -470,6 +537,7 @@ function App() {
                       <p className="mt-3 text-sm leading-7 text-ink/75">
                         鈴の音が落ち着いたら、紙札がゆっくり現れます。
                       </p>
+                      <p className="mt-2 text-xs leading-6 text-ink/60">{world.ambientNote}</p>
                     </div>
                   )}
 
@@ -501,6 +569,9 @@ function App() {
                           {activeFortune.fortune}
                         </p>
                         <p className="mt-4 text-base leading-8 text-ink">{activeFortune.summary}</p>
+                        <p className="mt-3 text-xs leading-6 text-ink/62">
+                          {world.seasonLabel}・{world.timeLabel}の空気のなかで受け取った一枚です。
+                        </p>
 
                         <div className="mt-6 grid gap-3">
                           {Object.entries(activeFortune.sections).map(([key, value], index) => (
