@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { toBlob } from 'html-to-image'
 import {
   badFortunes,
   clearSharedFortuneId,
@@ -6,15 +7,19 @@ import {
   createShareText,
   formatJapaneseDate,
   fortuneStyles,
+  getMotionPermissionState,
   getSharedFortuneId,
+  getTokyoDateKey,
   loadOmikujiDataset,
   loadStoredFortune,
   pickRandomFortune,
   playBell,
+  requestMotionPermission,
   saveStoredFortune,
   sectionLabels,
   setSharedFortuneId,
   vibrateLight,
+  type MotionPermissionState,
   type OmikujiEntry,
 } from './lib/omikuji'
 
@@ -41,16 +46,33 @@ function App() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [activeFortune, setActiveFortune] = useState<OmikujiEntry | null>(null)
   const [savedPreview, setSavedPreview] = useState<SavedPreview | null>(null)
+  const [sharedViewId, setSharedViewId] = useState<string | null>(null)
   const [drawnAt, setDrawnAt] = useState<string | null>(null)
   const [shareMessage, setShareMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSoundOn, setIsSoundOn] = useState(true)
-  const [motionSupported, setMotionSupported] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [motionPermission, setMotionPermission] =
+    useState<MotionPermissionState>('unsupported')
+  const [isExporting, setIsExporting] = useState(false)
 
   const drawTimeoutRef = useRef<number | null>(null)
   const drawActionRef = useRef<() => void>(() => undefined)
+  const shareCardRef = useRef<HTMLDivElement | null>(null)
 
+  const todayKey = getTokyoDateKey()
+  const hasTodayFortune = Boolean(
+    savedPreview && getTokyoDateKey(savedPreview.drawnAt) === todayKey,
+  )
+  const isViewingTodayFortune = Boolean(
+    activeFortune &&
+      savedPreview &&
+      drawnAt &&
+      savedPreview.entry.id === activeFortune.id &&
+      savedPreview.drawnAt === drawnAt &&
+      hasTodayFortune,
+  )
+  const canDrawToday = !hasTodayFortune
   useEffect(() => {
     let cancelled = false
 
@@ -60,6 +82,7 @@ function App() {
         if (cancelled) return
 
         setEntries(dataset)
+        setMotionPermission(getMotionPermissionState())
 
         const stored = loadStoredFortune()
         const sharedId = getSharedFortuneId()
@@ -79,6 +102,7 @@ function App() {
 
           if (sharedEntry) {
             setActiveFortune(sharedEntry)
+            setSharedViewId(sharedId)
             setPhase('revealed')
             setDrawnAt(stored?.id === sharedEntry.id ? stored.drawnAt : new Date().toISOString())
           }
@@ -104,24 +128,36 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    setMotionSupported('DeviceMotionEvent' in window)
-  }, [])
-
   const revealFortune = (entry: OmikujiEntry) => {
     const drawnTimestamp = new Date().toISOString()
     setActiveFortune(entry)
+    setSharedViewId(null)
     setSavedPreview({ entry, drawnAt: drawnTimestamp })
     setDrawnAt(drawnTimestamp)
     setPhase('revealed')
-    setShareMessage('')
-    saveStoredFortune({ id: entry.id, drawnAt: drawnTimestamp })
+    setShareMessage('本日のおみくじを授かりました。')
+    saveStoredFortune({
+      id: entry.id,
+      drawnAt: drawnTimestamp,
+      tokyoDateKey: getTokyoDateKey(drawnTimestamp),
+    })
     setSharedFortuneId(entry.id)
   }
 
   const handleDraw = () => {
     if (!entries.length || phase === 'drawing') return
+
+    if (hasTodayFortune) {
+      if (savedPreview) {
+        setActiveFortune(savedPreview.entry)
+        setDrawnAt(savedPreview.drawnAt)
+        setPhase('revealed')
+        setSharedViewId(null)
+        setSharedFortuneId(savedPreview.entry.id)
+      }
+      setShareMessage('今日はすでにおみくじを引いています。')
+      return
+    }
 
     const selected = pickRandomFortune(entries)
     setPhase('drawing')
@@ -141,7 +177,7 @@ function App() {
   drawActionRef.current = handleDraw
 
   useEffect(() => {
-    if (!motionSupported) return
+    if (motionPermission !== 'granted') return
 
     let lastMagnitude = 0
     let lastShakeAt = 0
@@ -166,9 +202,24 @@ function App() {
 
     window.addEventListener('devicemotion', onMotion)
     return () => window.removeEventListener('devicemotion', onMotion)
-  }, [motionSupported])
+  }, [motionPermission])
 
-  const handleShare = async () => {
+  const handleRequestMotion = async () => {
+    try {
+      const result = await requestMotionPermission()
+      setMotionPermission(result)
+      setShareMessage(
+        result === 'granted'
+          ? '端末を振って引けるようになりました。'
+          : 'モーションの許可がないため、引くボタンでご利用ください。',
+      )
+    } catch {
+      setMotionPermission('denied')
+      setShareMessage('モーションの許可が取得できませんでした。')
+    }
+  }
+
+  const handleShareLink = async () => {
     if (!activeFortune || !drawnAt) return
 
     const shareUrl = setSharedFortuneId(activeFortune.id)
@@ -192,22 +243,57 @@ function App() {
     }
   }
 
-  const handleCopy = async () => {
-    if (!activeFortune || !drawnAt) return
+  const handleExportCard = async () => {
+    if (!activeFortune || !drawnAt || !shareCardRef.current) return
+
+    setIsExporting(true)
 
     try {
-      const shareUrl = setSharedFortuneId(activeFortune.id)
-      await copyToClipboard(createShareText(activeFortune, drawnAt, shareUrl))
-      setShareMessage('おみくじの内容をコピーしました。')
+      const blob = await toBlob(shareCardRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#f7f3ee',
+      })
+
+      if (!blob) {
+        throw new Error('Share image export failed')
+      }
+
+      const filename = `omikuji-${activeFortune.id}.png`
+      const file = new File([blob], filename, { type: 'image/png' })
+
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({
+          title: 'おみくじ',
+          files: [file],
+        })
+        setShareMessage('おみくじ画像をシェアしました。')
+        return
+      }
+
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = filename
+      document.body.append(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+      setShareMessage('おみくじ画像を保存しました。')
     } catch {
-      setShareMessage('コピーに失敗しました。')
+      setShareMessage('画像の書き出しに失敗しました。')
+    } finally {
+      setIsExporting(false)
     }
   }
 
   const handleTie = () => {
-    if (!activeFortune || !badFortunes.has(activeFortune.fortune)) return
+    if (!activeFortune || !isViewingTodayFortune || !badFortunes.has(activeFortune.fortune)) {
+      return
+    }
+
     setPhase('tied')
-    setShareMessage('')
+    setShareMessage('悪い運気をここに結びました。')
     clearSharedFortuneId()
   }
 
@@ -217,12 +303,16 @@ function App() {
     setDrawnAt(savedPreview.drawnAt)
     setPhase('revealed')
     setShareMessage('')
+    setSharedViewId(null)
     setSharedFortuneId(savedPreview.entry.id)
   }
 
   const resetLanding = () => {
     setPhase('idle')
     setShareMessage('')
+    setActiveFortune(null)
+    setDrawnAt(null)
+    setSharedViewId(null)
     clearSharedFortuneId()
   }
 
@@ -257,26 +347,33 @@ function App() {
             <p className="mt-3 text-sm leading-6 text-ink/80">今日の運勢を引いてみましょう</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsSoundOn((current) => !current)}
-            className="ripple-button rounded-full border border-charcoal/10 bg-white/70 px-4 py-2 text-xs font-medium text-ink shadow-sm backdrop-blur"
-          >
-            {isSoundOn ? '音あり' : '消音'}
-          </button>
+          <div className="flex gap-2">
+            <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-2 text-[11px] text-ink/75">
+              {todayKey}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsSoundOn((current) => !current)}
+              className="ripple-button rounded-full border border-charcoal/10 bg-white/70 px-4 py-2 text-xs font-medium text-ink shadow-sm backdrop-blur"
+            >
+              {isSoundOn ? '音あり' : '消音'}
+            </button>
+          </div>
         </header>
 
         <section className="relative flex flex-1 flex-col">
           <div className="pointer-events-none absolute inset-x-6 top-16 h-40 rounded-full bg-gradient-to-b from-shrine-red/10 to-transparent blur-3xl" />
 
           <div className="relative rounded-[2rem] border border-white/60 bg-white/55 p-5 shadow-slip backdrop-blur">
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-shrine-red/70">Sacred Draw</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-shrine-red/70">Daily Shrine Draw</p>
                 <p className="mt-2 text-sm text-ink/75">
-                  {motionSupported
-                    ? '引くボタンか端末を軽く振って、おみくじを引けます。'
-                    : '引くボタンで、ゆっくり今日の運勢を受け取りましょう。'}
+                  {hasTodayFortune
+                    ? '本日分はすでに授かっています。結果を大切に持ち帰りましょう。'
+                    : motionPermission === 'granted'
+                      ? '引くボタンでも、端末を軽く振っても、おみくじを引けます。'
+                      : '一日一回、静かに今日の運勢を受け取りましょう。'}
                 </p>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gold/30 bg-gold/10 font-serif text-lg text-shrine-red animate-float">
@@ -313,20 +410,40 @@ function App() {
                         <div className="absolute left-1/2 top-10 h-28 w-16 -translate-x-1/2 rounded-[1.1rem] border border-paper-deep bg-paper shadow-slip" />
                       </div>
 
-                      <p className="font-serif text-3xl text-charcoal">今日の一枚</p>
-                      <p className="mt-3 max-w-[16rem] text-sm leading-7 text-ink/80">
-                        深呼吸をひとつ。心を静かにしてから、そっと運勢を引いてみましょう。
+                      <p className="font-serif text-3xl text-charcoal">
+                        {hasTodayFortune ? '本日の一枚' : '今日の一枚'}
+                      </p>
+                      <p className="mt-3 max-w-[17rem] text-sm leading-7 text-ink/80">
+                        {hasTodayFortune
+                          ? '今日のおみくじはすでに引いてあります。静かな余韻とともに、受け取った言葉を見返してみましょう。'
+                          : '深呼吸をひとつ。心を静かにしてから、そっと運勢を引いてみましょう。'}
                       </p>
 
                       <button
                         type="button"
-                        onClick={handleDraw}
+                        onClick={hasTodayFortune ? showSavedPreview : handleDraw}
                         className="ripple-button mt-8 inline-flex min-h-12 items-center justify-center rounded-full bg-shrine-red px-10 py-4 font-medium text-paper shadow-glow transition-transform duration-200 active:scale-[0.98]"
                       >
-                        引く
+                        {hasTodayFortune ? '今日の運勢を見る' : '引く'}
                       </button>
 
-                      {savedPreview && (
+                      {motionPermission === 'prompt' && !hasTodayFortune && (
+                        <button
+                          type="button"
+                          onClick={handleRequestMotion}
+                          className="mt-4 rounded-full border border-charcoal/10 bg-white/80 px-5 py-3 text-sm text-ink/85 backdrop-blur"
+                        >
+                          振って引く準備をする
+                        </button>
+                      )}
+
+                      {motionPermission === 'denied' && (
+                        <p className="mt-4 max-w-[16rem] text-xs leading-6 text-ink/65">
+                          端末のモーションは未許可です。引くボタンならそのまま使えます。
+                        </p>
+                      )}
+
+                      {savedPreview && !hasTodayFortune && (
                         <button
                           type="button"
                           onClick={showSavedPreview}
@@ -335,6 +452,10 @@ function App() {
                           前回のおみくじを見る
                         </button>
                       )}
+
+                      <p className="mt-6 text-xs leading-6 text-ink/60">
+                        オフライン対応済み。ホーム画面にも追加できます。
+                      </p>
                     </div>
                   )}
 
@@ -354,17 +475,24 @@ function App() {
 
                   {activeFortune && phase !== 'idle' && (
                     <div className={phase === 'tied' ? 'animate-fold-away origin-top' : 'animate-fade-up'}>
-                      <div className="mb-4 flex items-center justify-between">
+                      <div className="mb-4 flex items-center justify-between gap-2">
                         <span
                           className={`inline-flex rounded-full px-4 py-2 text-sm font-medium shadow-sm ${fortuneStyles[activeFortune.fortune].badge}`}
                         >
                           {activeFortune.fortune}
                         </span>
-                        {drawnAt && (
-                          <span className="rounded-full border border-charcoal/10 bg-white/70 px-3 py-1 text-xs text-ink/70">
-                            {formatJapaneseDate(drawnAt)}
-                          </span>
-                        )}
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {drawnAt && (
+                            <span className="rounded-full border border-charcoal/10 bg-white/70 px-3 py-1 text-xs text-ink/70">
+                              {formatJapaneseDate(drawnAt)}
+                            </span>
+                          )}
+                          {sharedViewId && (
+                            <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs text-ink/70">
+                              共有されたおみくじ
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="rounded-[1.5rem] border border-paper-deep/90 bg-paper/95 p-5 shadow-slip">
@@ -412,40 +540,61 @@ function App() {
                       </div>
 
                       {phase === 'revealed' && (
-                        <div className="mt-5 grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={handleShare}
-                            className="ripple-button rounded-full bg-shrine-red px-5 py-3 text-sm font-medium text-paper shadow-glow"
-                          >
-                            シェア
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCopy}
-                            className="ripple-button rounded-full border border-charcoal/10 bg-white/80 px-5 py-3 text-sm font-medium text-ink"
-                          >
-                            コピー
-                          </button>
-
-                          {badFortunes.has(activeFortune.fortune) && (
+                        <>
+                          <div className="mt-5 grid grid-cols-2 gap-3">
                             <button
                               type="button"
-                              onClick={handleTie}
-                              className="ripple-button col-span-2 rounded-full border border-gold/30 bg-gold/10 px-5 py-3 text-sm font-medium text-ink"
+                              onClick={handleShareLink}
+                              className="ripple-button rounded-full bg-shrine-red px-5 py-3 text-sm font-medium text-paper shadow-glow"
                             >
-                              結ぶ
+                              リンク共有
                             </button>
-                          )}
+                            <button
+                              type="button"
+                              onClick={handleExportCard}
+                              disabled={isExporting}
+                              className="ripple-button rounded-full border border-charcoal/10 bg-white/80 px-5 py-3 text-sm font-medium text-ink disabled:opacity-60"
+                            >
+                              {isExporting ? '書き出し中...' : '画像保存'}
+                            </button>
 
-                          <button
-                            type="button"
-                            onClick={handleDraw}
-                            className="ripple-button col-span-2 rounded-full border border-charcoal/10 bg-white/70 px-5 py-3 text-sm font-medium text-ink"
-                          >
-                            もう一度引く
-                          </button>
-                        </div>
+                            {badFortunes.has(activeFortune.fortune) && isViewingTodayFortune && (
+                              <button
+                                type="button"
+                                onClick={handleTie}
+                                className="ripple-button col-span-2 rounded-full border border-gold/30 bg-gold/10 px-5 py-3 text-sm font-medium text-ink"
+                              >
+                                結ぶ
+                              </button>
+                            )}
+
+                            {canDrawToday && (
+                              <button
+                                type="button"
+                                onClick={handleDraw}
+                                className="ripple-button col-span-2 rounded-full border border-charcoal/10 bg-white/70 px-5 py-3 text-sm font-medium text-ink"
+                              >
+                                今日の運勢を引く
+                              </button>
+                            )}
+
+                            {!canDrawToday && !isViewingTodayFortune && savedPreview && (
+                              <button
+                                type="button"
+                                onClick={showSavedPreview}
+                                className="ripple-button col-span-2 rounded-full border border-charcoal/10 bg-white/70 px-5 py-3 text-sm font-medium text-ink"
+                              >
+                                今日の運勢を見る
+                              </button>
+                            )}
+                          </div>
+
+                          {isViewingTodayFortune && (
+                            <p className="mt-4 text-center text-xs leading-6 text-ink/65">
+                              一日一回のおみくじです。次の一枚は東京時間で日付が変わると引けます。
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -454,15 +603,15 @@ function App() {
                     <div className="absolute inset-x-2 bottom-2 rounded-[1.4rem] border border-paper-deep bg-white/88 p-5 text-center shadow-slip animate-fade-up">
                       <p className="font-serif text-2xl text-charcoal">悪い運気はここに結びました</p>
                       <p className="mt-3 text-sm leading-7 text-ink/75">
-                        焦りを手放し、今日は静かに整える日にしていきましょう。
+                        今日は静かに整える日。結んだぶんだけ、心も少し軽くなっています。
                       </p>
                       <div className="mt-5 flex gap-3">
                         <button
                           type="button"
-                          onClick={handleDraw}
+                          onClick={showSavedPreview}
                           className="ripple-button flex-1 rounded-full bg-shrine-red px-5 py-3 text-sm font-medium text-paper shadow-glow"
                         >
-                          新しく引く
+                          今日の運勢を見る
                         </button>
                         <button
                           type="button"
@@ -483,7 +632,9 @@ function App() {
             <div className="mt-4 rounded-[1.5rem] border border-white/60 bg-white/55 px-5 py-4 shadow-sm backdrop-blur animate-fade-up">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-shrine-red/70">Last Drawn</p>
+                  <p className="text-xs uppercase tracking-[0.22em] text-shrine-red/70">
+                    {hasTodayFortune ? 'Today' : 'Last Drawn'}
+                  </p>
                   <p className="mt-2 font-serif text-xl text-charcoal">{savedPreview.entry.fortune}</p>
                   <p className="mt-1 text-xs text-ink/70">{formatJapaneseDate(savedPreview.drawnAt)}</p>
                 </div>
@@ -499,6 +650,69 @@ function App() {
           </footer>
         </section>
       </div>
+
+      {activeFortune && drawnAt && (
+        <div className="pointer-events-none fixed left-[-200vw] top-0 w-[1080px]">
+          <div
+            ref={shareCardRef}
+            className="overflow-hidden rounded-[56px] bg-[#f7f3ee] p-12 text-charcoal"
+          >
+            <div className="rounded-[44px] border border-[#ead8c6] bg-[linear-gradient(180deg,#fffdf9,#f7f3ee)] p-12 shadow-[0_24px_80px_rgba(91,59,39,0.16)]">
+              <div className="mb-10 flex items-start justify-between">
+                <div>
+                  <p className="font-serif text-[30px] tracking-[0.35em] text-shrine-red/80">OMIKUJI</p>
+                  <p className="mt-4 font-serif text-[88px] leading-none text-charcoal">
+                    {activeFortune.fortune}
+                  </p>
+                </div>
+                <div
+                  className={`rounded-full px-8 py-4 text-[28px] font-medium ${fortuneStyles[activeFortune.fortune].badge}`}
+                >
+                  {formatJapaneseDate(drawnAt)}
+                </div>
+              </div>
+
+              <p className="max-w-[860px] font-serif text-[42px] leading-[1.7] text-ink">
+                {activeFortune.summary}
+              </p>
+
+              <div className="mt-10 grid grid-cols-2 gap-5">
+                {Object.entries(activeFortune.sections).map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="rounded-[30px] border border-charcoal/8 bg-white/80 px-7 py-6"
+                  >
+                    <p className="text-[22px] tracking-[0.25em] text-shrine-red/70">
+                      {sectionLabels[key as keyof OmikujiEntry['sections']]}
+                    </p>
+                    <p className="mt-3 text-[27px] leading-[1.8] text-ink">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 rounded-[32px] border border-gold/20 bg-gradient-to-r from-gold/10 via-white/80 to-shrine-red/5 px-7 py-6">
+                <p className="text-[22px] tracking-[0.25em] text-shrine-red/70">LUCKY SIGNS</p>
+                <div className="mt-4 flex flex-wrap gap-3 text-[26px] text-ink">
+                  <span className="rounded-full border border-gold/30 bg-white/70 px-5 py-3">
+                    色: {activeFortune.lucky.color}
+                  </span>
+                  <span className="rounded-full border border-gold/30 bg-white/70 px-5 py-3">
+                    数字: {activeFortune.lucky.number}
+                  </span>
+                  <span className="rounded-full border border-gold/30 bg-white/70 px-5 py-3">
+                    品: {activeFortune.lucky.item}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-10 flex items-center justify-between text-[22px] text-ink/70">
+                <span>一日一回、静かに受け取るおみくじ</span>
+                <span>omikuji</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

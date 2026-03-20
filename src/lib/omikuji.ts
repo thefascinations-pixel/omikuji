@@ -22,7 +22,10 @@ export type OmikujiEntry = {
 export type StoredFortune = {
   id: string
   drawnAt: string
+  tokyoDateKey: string
 }
+
+export type MotionPermissionState = 'unsupported' | 'prompt' | 'granted' | 'denied'
 
 declare global {
   interface Window {
@@ -30,8 +33,13 @@ declare global {
   }
 }
 
+type DeviceMotionPermissionCapable = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<'granted' | 'denied'>
+}
+
 const STORAGE_KEY = 'omikuji:last-drawn'
 const FORTUNE_QUERY = 'fortune'
+const TOKYO_TIME_ZONE = 'Asia/Tokyo'
 
 export const badFortunes = new Set<FortuneTier>(['末吉', '凶'])
 
@@ -94,6 +102,26 @@ export function pickRandomFortune(entries: OmikujiEntry[]) {
   return entries[index]
 }
 
+export function getTokyoDateKey(dateInput: string | Date = new Date()) {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TOKYO_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000'
+  const month = parts.find((part) => part.type === 'month')?.value ?? '00'
+  const day = parts.find((part) => part.type === 'day')?.value ?? '00'
+
+  return `${year}-${month}-${day}`
+}
+
+export function isSameTokyoDay(dateA: string, dateB: string | Date = new Date()) {
+  return getTokyoDateKey(dateA) === getTokyoDateKey(dateB)
+}
+
 export function saveStoredFortune(fortune: StoredFortune) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fortune))
 }
@@ -112,6 +140,7 @@ export function loadStoredFortune() {
 
 export function formatJapaneseDate(isoDate: string) {
   return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: TOKYO_TIME_ZONE,
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -156,6 +185,25 @@ export function createShareText(entry: OmikujiEntry, drawnAt: string, shareUrl: 
 
 export async function copyToClipboard(text: string) {
   await navigator.clipboard.writeText(text)
+}
+
+export function getMotionPermissionState(): MotionPermissionState {
+  if (typeof window === 'undefined' || typeof DeviceMotionEvent === 'undefined') {
+    return 'unsupported'
+  }
+
+  const motionConstructor = DeviceMotionEvent as DeviceMotionPermissionCapable
+  return typeof motionConstructor.requestPermission === 'function' ? 'prompt' : 'granted'
+}
+
+export async function requestMotionPermission() {
+  if (typeof DeviceMotionEvent === 'undefined') return 'unsupported' as const
+
+  const motionConstructor = DeviceMotionEvent as DeviceMotionPermissionCapable
+  if (typeof motionConstructor.requestPermission !== 'function') return 'granted' as const
+
+  const result = await motionConstructor.requestPermission()
+  return result === 'granted' ? ('granted' as const) : ('denied' as const)
 }
 
 export function playBell(enabled: boolean) {
