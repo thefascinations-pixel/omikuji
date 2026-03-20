@@ -42,13 +42,6 @@ const particles = [
   { top: '86%', left: '60%', size: '9px', delay: '1.1s', duration: '12s' },
 ]
 
-const worldMarks = [
-  { top: '9%', left: '7%', rotate: '-8deg', delay: '0s' },
-  { top: '18%', left: '82%', rotate: '7deg', delay: '1.1s' },
-  { top: '33%', left: '12%', rotate: '-5deg', delay: '2.1s' },
-  { top: '58%', left: '84%', rotate: '6deg', delay: '0.6s' },
-]
-
 function App() {
   const [entries, setEntries] = useState<OmikujiEntry[]>([])
   const [phase, setPhase] = useState<Phase>('idle')
@@ -354,21 +347,6 @@ function App() {
         />
       ))}
 
-      {worldMarks.map((mark, index) => (
-        <span
-          key={`${mark.top}-${mark.left}`}
-          className="pointer-events-none absolute font-serif text-lg text-shrine-red/18 animate-float"
-          style={{
-            top: mark.top,
-            left: mark.left,
-            transform: `rotate(${mark.rotate})`,
-            animationDelay: mark.delay,
-          }}
-        >
-          {world.motifs[index % world.motifs.length]}
-        </span>
-      ))}
-
       <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-8 pt-6 sm:px-6">
         <header className="mb-6 flex items-start justify-between">
           <div>
@@ -399,8 +377,8 @@ function App() {
           <div
             className={`relative rounded-[2rem] p-5 shadow-slip backdrop-blur ${world.panelTint}`}
           >
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-              <div className="max-w-[15.5rem]">
+            <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="w-full sm:max-w-[17rem]">
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full border border-charcoal/10 bg-white/60 px-3 py-1 text-[11px] tracking-[0.2em] text-ink/70">
                     {world.seasonLabel}
@@ -409,7 +387,9 @@ function App() {
                     {world.timeLabel}
                   </span>
                 </div>
-                <p className="mt-3 font-serif text-xl leading-8 text-charcoal">{world.subtitle}</p>
+                <p className="mt-3 font-serif text-xl leading-8 text-charcoal sm:text-[1.35rem]">
+                  {world.subtitle}
+                </p>
                 <p className="mt-2 text-sm leading-7 text-ink/72">
                   {hasTodayFortune
                     ? '本日分はすでに授かっています。結果を大切に持ち帰りましょう。'
@@ -418,11 +398,11 @@ function App() {
                       : '一日一回、静かに今日の運勢を受け取りましょう。'}
                 </p>
               </div>
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex w-full flex-row items-center justify-between gap-3 sm:w-auto sm:flex-col sm:items-end">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gold/30 bg-gold/10 font-serif text-lg text-shrine-red animate-float">
                   鈴
                 </div>
-                <p className="max-w-[7rem] text-right text-[11px] leading-5 text-ink/60">
+                <p className="flex-1 text-left text-[11px] leading-5 text-ink/60 sm:max-w-[7rem] sm:text-right">
                   {world.ambientNote}
                 </p>
               </div>
@@ -477,12 +457,12 @@ function App() {
                       <p className="font-serif text-3xl text-charcoal">
                         {hasTodayFortune ? '本日の一枚' : '今日の一枚'}
                       </p>
-                      <p className="mt-3 max-w-[17rem] text-sm leading-7 text-ink/80">
+                      <p className="mt-3 w-full text-sm leading-7 text-ink/80">
                         {hasTodayFortune
                           ? '今日のおみくじはすでに引いてあります。静かな余韻とともに、受け取った言葉を見返してみましょう。'
                           : '深呼吸をひとつ。心を静かにしてから、そっと運勢を引いてみましょう。'}
                       </p>
-                      <p className="mt-3 max-w-[17rem] text-xs leading-6 text-ink/62">
+                      <p className="mt-3 w-full text-xs leading-6 text-ink/62">
                         {world.subtitle}
                       </p>
 
@@ -505,7 +485,7 @@ function App() {
                       )}
 
                       {motionPermission === 'denied' && (
-                        <p className="mt-4 max-w-[16rem] text-xs leading-6 text-ink/65">
+                        <p className="mt-4 w-full text-xs leading-6 text-ink/65">
                           端末のモーションは未許可です。引くボタンならそのまま使えます。
                         </p>
                       )}
